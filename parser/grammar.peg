@@ -1,0 +1,114 @@
+{
+package parser
+
+import (
+	"bytes"
+	"strconv"
+	"strings"
+
+	"github.com/ragpanda/model-ql/util"
+)
+    
+
+}
+
+
+
+Grammar ← __ statements:( Statement __ )* (EOF / SyntaxError) {
+	return parseCompile(statements)
+}
+
+
+Statement ← ModelDefine 
+
+ModelDefine ←  "model" _ ident:Identifier _ "{" __ selectData:Select __ "}" {
+	return parseModel(ident, selectData)
+}
+
+
+Select ← "select" __ fieldList:SelectFieldList __ "from" __ model:Model __ join:JoinClause? __ where:WhereClause? __{
+	return parseSelectStmt(fieldList, model, join, where)
+}
+
+SelectFieldList ← SelectField  __ ( "," __ SelectField __)*
+Model ← Identifier 
+SelectField ← name:(SelectFieldIdentifier)  __ alias:("as" __  Identifier)?  {
+	return parseSelectField(name, alias)
+}
+
+SelectFieldIdentifier ←  "*" / Identifier 
+
+
+
+
+
+JoinClause ← __ Join+ 
+Join ←   "join" __ target:JoinTarget __ "on"  __ self:MiltiLevelField __ compare:CompareOp __ ref:MiltiLevelField __ {
+	return parseJoin(target, self, compare, ref)
+}
+
+JoinTarget ← name:(Identifier)  __ alias:("as" __ Identifier)? {
+	return parseJoinTarget(name, alias)
+}
+
+
+WhereClause ←  "where" __ Where 
+Where ← WhereHasBracket / WhereCondition / WhereList 
+WhereHasBracket ←  "(" __ Where  __ ")" 
+WhereList  ←  Where __  ( BoolOP __ Where __)*
+WhereCondition ←  field:MiltiLevelField __ op:CompareOp __  c:Condition 
+
+
+
+Condition ← expr:(Digit / ("\"" [^"] "\"") / ("$" Identifier)){
+	return string(c.text), nil
+}
+
+
+BoolOP ←  "and"/ "or"/ "not" {
+	return string(c.text), nil
+}
+CompareOp  ←  "!="/ "="/ "not in"/ "in" {
+	return string(c.text), nil
+}
+MiltiLevelField  ←  ident:(Identifier  ("." Identifier)*){
+	return parseMiltiLevelField(ident)
+}
+
+
+
+
+
+
+// Basic Grammar
+Keyword ←  BoolOP /CompareOp
+Identifier ← !Keyword (Letter / '_')+ (Letter / Digit / [_])* {
+	return Identifier(string(c.text)), nil
+}
+ListSeparator ← [,;]
+Letter ← [A-Za-z]
+Digit ← [0-9]
+
+
+SourceChar ← .
+Comment ← MultiLineComment / SingleLineComment
+MultiLineComment ← "/*" ( !"*/" SourceChar )* "*/"
+MultiLineCommentNoLineTerminator ← "/*" ( !( "*/" / EOL ) SourceChar )* "*/"
+SingleLineComment ← ("//" ( !EOL SourceChar )*) / ("#" ( !EOL SourceChar )*)
+
+
+__ ← ( Whitespace / EOL / Comment )*
+NoCommentIgnore ← ( Whitespace / EOL )*
+_ ← (Whitespace)*
+WS ← Whitespace*
+
+Whitespace ← [ \t\r]
+EOL ← '\n'
+EOS ← __ ';' / _ SingleLineComment? EOL / __ EOF
+
+EOF ← !.
+
+
+SyntaxError ← . {
+	return nil, errors.New("parser: syntax error")
+}

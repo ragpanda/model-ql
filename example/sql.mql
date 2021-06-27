@@ -1,0 +1,9 @@
+
+model a = {
+   select * from data 
+   where 
+      a.id=1 and name="los karlen" 
+      and ( 
+         key=1 or key=2 or b in (1,2) or c in ("13","12")
+      )
+}
