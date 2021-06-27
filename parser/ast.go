@@ -170,30 +170,4 @@ func parseMiltiLevelField(idents interface{}) (interface{}, error) {
 }
 
 type Where struct {
-	CompareOp *string
-	Field     MiltiLevelField
-	Condition string
-
-	BoolOp string
-	Sub    []*Where
-}
-
-func parseWhereList(sub, more interface{}) (interface{}, error) {
-	w := &Where{}
-	w.Sub = []*Where{sub.(*Where)}
-
-	if more != nil {
-		for k, v := range toIfaceSlice(more) {
-			itemList := toIfaceSlice(v)
-			op := itemList[0].(string)
-			whereSub := itemList[2].(*Where)
-			whereSub.BoolOp = op
-			if k == 0 {
-				w.Sub[0].BoolOp = op
-			}
-			w.Sub = append(w.Sub, whereSub)
-		}
-	}
-
-	return w, nil
 }

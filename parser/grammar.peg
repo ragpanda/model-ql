@@ -52,15 +52,14 @@ JoinTarget ← name:(Identifier)  __ alias:("as" __ Identifier)? {
 }
 
 
-WhereClause ←  "where" __ Where 
-Where ← WhereHasBracket / WhereCondition / WhereList 
-WhereHasBracket ←  "(" __ Where  __ ")" 
-WhereList  ←  Where __  ( BoolOP __ Where __)*
-WhereCondition ←  field:MiltiLevelField __ op:CompareOp __  c:Condition 
+WhereClause ←  "where" __ WhereList 
+WhereList ← Where __ (BoolOP __ Where __)* 
+Where ← WhereCondition / WhereHasBracket
+WhereHasBracket ←  "(" __ WhereList  __ ")" 
+WhereCondition ← field:MiltiLevelField __ op:CompareOp __  c:Condition 
 
 
-
-Condition ← expr:(Digit / ("\"" [^"] "\"") / ("$" Identifier)){
+Condition ← Number / Bool/ String/ Null / ("$" Identifier){
 	return string(c.text), nil
 }
 
@@ -77,6 +76,40 @@ MiltiLevelField  ←  ident:(Identifier  ("." Identifier)*){
 
 
 
+
+// Value define
+Number ← '-'? Integer ( '.' DecimalDigit+ )? Exponent? {
+    // JSON numbers have the same syntax as Go's, and are parseable using
+    // strconv.
+    return strconv.ParseFloat(string(c.text), 64)
+}
+
+Integer ← '0' / NonZeroDecimalDigit DecimalDigit*
+
+Exponent ← 'e'i [+-]? DecimalDigit+
+
+String ← '"' ( !EscapedChar . / '\\' EscapeSequence )* '"' {
+    c.text = bytes.Replace(c.text, []byte(`\/`), []byte(`/`), -1)
+    return strconv.Unquote(string(c.text))
+}
+
+EscapedChar ← [\x00-\x1f"\\]
+
+EscapeSequence ← SingleCharEscape / UnicodeEscape
+
+SingleCharEscape ← ["\\/bfnrt]
+
+UnicodeEscape ← 'u' HexDigit HexDigit HexDigit HexDigit
+
+DecimalDigit ← [0-9]
+
+NonZeroDecimalDigit ← [1-9]
+
+HexDigit ← [0-9a-f]i
+
+Bool ← "true" { return true, nil } / "false" { return false, nil }
+
+Null ← "null" { return nil, nil }
 
 
 
