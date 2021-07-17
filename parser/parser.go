@@ -8,10 +8,13 @@ package parser
 //go:generate goimports -w ./grammar.peg.go
 
 import (
+	"context"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"github.com/ragpanda/model-ql/util"
 )
 
 type Filesystem interface {
@@ -20,7 +23,16 @@ type Filesystem interface {
 }
 
 type Parser struct {
-	Filesystem Filesystem // For handling includes. Can be set to nil to fall back to os package.
+	ctx        context.Context
+	filesystem Filesystem
+	// For handling includes. Can be set to nil to fall back to os package.
+}
+
+func NewParser(ctx context.Context) *Parser {
+	return &Parser{
+		ctx:        ctx,
+		filesystem: nil,
+	}
 }
 
 func (p *Parser) Parse(r io.Reader, opts ...Option) (*CompileUnit, error) {
@@ -36,7 +48,11 @@ func (p *Parser) Parse(r io.Reader, opts ...Option) (*CompileUnit, error) {
 	if err != nil {
 		return nil, err
 	}
-	return t.(*CompileUnit), nil
+
+	compileUnit := t.(*CompileUnit)
+	p.process(compileUnit)
+
+	return compileUnit, nil
 }
 
 func (p *Parser) ParseFile(filename string) (map[string]*CompileUnit, string, error) {
@@ -65,23 +81,36 @@ func (p *Parser) ParseFile(filename string) (map[string]*CompileUnit, string, er
 }
 
 func (p *Parser) open(path string) (io.ReadCloser, error) {
-	if p.Filesystem == nil {
+	if p.filesystem == nil {
 		return os.Open(path)
 	}
-	return p.Filesystem.Open(path)
+	return p.filesystem.Open(path)
 }
 
 func (p *Parser) abs(path string) (string, error) {
-	if p.Filesystem == nil {
+	if p.filesystem == nil {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return "", err
 		}
 		return filepath.Clean(absPath), nil
 	}
-	return p.Filesystem.Abs(path)
+	return p.filesystem.Abs(path)
 }
 
 type namedReader interface {
 	Name() string
+}
+
+func (p *Parser) process(compileUnit *CompileUnit) error {
+	ctx := p.ctx
+	for _, view := range compileUnit.ViewList {
+		err := view.process(ctx)
+		if err != nil {
+			util.Info(ctx, "Err: %s", err.Error())
+			return err
+		}
+	}
+
+	return nil
 }

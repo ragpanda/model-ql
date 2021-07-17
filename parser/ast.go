@@ -1,107 +1,103 @@
 package parser
 
-import "github.com/ragpanda/model-ql/util"
+import (
+	"context"
 
-type Identifier string
+	"github.com/spf13/cast"
+)
 
 type CompileUnit struct {
-	ModelList []*Model
+	ViewList []*View
+
+	viewMap map[string]*View
 }
 
-func parseCompile(statements interface{}) (interface{}, error) {
-	compileUnit := &CompileUnit{}
-	statementsList := toIfaceSlice(statements)
-	for _, stmts := range statementsList {
-		switch stmt := stmts.([]interface{})[0].(type) {
-		case *Model:
-			compileUnit.ModelList = append(compileUnit.ModelList, stmt)
-		default:
-
+func (self *CompileUnit) process(ctx context.Context) error {
+	self.viewMap = make(map[string]*View, 0)
+	for _, view := range self.ViewList {
+		self.viewMap[view.Ident] = view
+		err := view.process(ctx)
+		if err != nil {
+			return err
 		}
 	}
 
-	return compileUnit, nil
+	return nil
+
 }
 
-type Model struct {
+type View struct {
 	Ident  string
 	Select *SelectStmt
 }
 
-func parseModel(ident, selectData interface{}) (interface{}, error) {
-	model := &Model{
-		Ident:  parseString(toFirst(ident)),
-		Select: nil,
-	}
-
-	model.Select = selectData.(*SelectStmt)
-
-	return model, nil
+func (self *View) process(ctx context.Context) error {
+	return self.Select.process(ctx)
 }
 
 type SelectStmt struct {
 	FieldList    []*SelectField
-	Model        string
+	View         string
 	JoinClauses  []*Join
-	WhereClauses *Where
+	WhereClauses *WhereList
+
+	// IR
+
+	// Field
+	QueryFromView func() *View
+	GetViewType   func() *Type
 }
 
-func parseSelectStmt(fieldList, model, join, where interface{}) (interface{}, error) {
-	selectStmt := &SelectStmt{}
+func (self *SelectStmt) process(ctx context.Context) error {
 
-	Iter(fieldList, func(v interface{}) {
-		switch item := v.(type) {
-		case *SelectField:
-			selectStmt.FieldList = append(
-				selectStmt.FieldList, item)
+	hasMatchAll := false
+	for _, f := range self.FieldList {
+		if f.Field == "*" {
+			hasMatchAll = true
 		}
-	})
-
-	Iter(join, func(v interface{}) {
-		switch item := v.(type) {
-		case *Join:
-			selectStmt.JoinClauses = append(
-				selectStmt.JoinClauses, item)
-		default:
-			util.Info(nil, "%s", util.Display(item))
-		}
-	})
-
-	Iter(where, func(v interface{}) {
-		switch item := v.(type) {
-		case *Where:
-			selectStmt.WhereClauses = item
-		}
-	})
-
-	selectStmt.Model = parseString(toFirst(model))
-
-	return selectStmt, nil
-}
-
-type SelectField struct {
-	Field string
-	Alias *string
-}
-
-func parseSelectField(name, alias interface{}) (interface{}, error) {
-	sf := &SelectField{
-		Field: parseString(name),
-		Alias: nil,
 	}
 
-	if alias != nil {
-		Iter(alias, func(x interface{}) {
-			switch item := x.(type) {
-			case Identifier:
-				aliasStr := string(item)
-				sf.Alias = &aliasStr
+	if hasMatchAll {
+		return NewSemanticError("Match can't exist with field on same time")
+	}
+
+	self.QueryFromView = ResolveView(ctx, self.View)
+	self.GetViewType = func() *Type {
+		originView := self.QueryFromView()
+		t := &Type{
+			Name:        "SelectStmtVirtal_" + self.View + "_" + cast.ToString(GetCurrentCount()),
+			TEnum:       CustomStruct,
+			Field:       []*FieldItem{},
+			Enum:        []*EnumItem{},
+			KeyType:     &Type{},
+			ValueType:   &Type{},
+			Annotations: []*Annotation{},
+		}
+
+		parentView := originView.Select.GetViewType()
+
+		if hasMatchAll {
+			t.Field = parentView.Field
+		} else {
+			// Compare with select field
+			for _, selectField := range self.FieldList {
+				for _, originModelField := range parentView.Field {
+					if selectField.Field == originModelField.Name {
+						t.Field = append(t.Field, originModelField) // TODO do Copy
+					}
+				}
 			}
-		})
+		}
 
+		return t
 	}
 
-	return sf, nil
+	for _, joinClause := range self.JoinClauses {
+		joinClause.process(ctx)
+	}
+
+	return nil
+
 }
 
 type Join struct {
@@ -110,64 +106,11 @@ type Join struct {
 	Self       MiltiLevelField
 	CompareOp  string
 	Ref        MiltiLevelField
+
+	// IR
+	JoinTargetRef *View
 }
 
-func parseJoin(target, self, compare, ref interface{}) (interface{}, error) {
-	t := target.(*JoinTarget)
-
-	join := &Join{
-		JoinTarget: t.Model,
-		Alias:      t.Alias,
-		Self:       *self.(*MiltiLevelField),
-		CompareOp:  parseString(compare),
-		Ref:        *ref.(*MiltiLevelField),
-	}
-
-	return join, nil
-}
-
-type JoinTarget struct {
-	Model string
-	Alias *string
-}
-
-func parseJoinTarget(name, alias interface{}) (interface{}, error) {
-
-	jt := &JoinTarget{
-		Model: parseString(name),
-		Alias: nil,
-	}
-
-	if alias != nil {
-		Iter(alias, func(x interface{}) {
-			switch item := x.(type) {
-			case Identifier:
-				aliasStr := string(item)
-				jt.Alias = &aliasStr
-			}
-		})
-
-	}
-
-	return jt, nil
-}
-
-type MiltiLevelField struct {
-	Ident []string
-}
-
-func parseMiltiLevelField(idents interface{}) (interface{}, error) {
-	r := &MiltiLevelField{}
-
-	Iter(idents, func(x interface{}) {
-		switch item := x.(type) {
-		case Identifier:
-			r.Ident = append(r.Ident, string(item))
-		}
-	})
-
-	return r, nil
-}
-
-type Where struct {
+func (self *Join) process(ctx context.Context) error {
+	return nil
 }
