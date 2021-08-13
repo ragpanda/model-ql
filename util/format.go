@@ -16,6 +16,10 @@ func Display(data interface{}) string {
 		return fmt.Sprintf("%+v", data)
 	}
 
+	if u8t, ok := data.([]uint8); ok {
+		return fmt.Sprintf("(%T)%s", data, string(u8t))
+	}
+
 	kind := dataValue.Type().Kind()
 	if kind == reflect.Struct || kind == reflect.Slice || kind == reflect.Map {
 		if dataValue.Type() == reflect.TypeOf(sync.Map{}) {

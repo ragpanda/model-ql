@@ -27,11 +27,15 @@ func Logger() *LoggerWrapper {
 		logger = &LoggerWrapper{
 			logger: logrus.StandardLogger(),
 		}
-
+		logger.logger.Level = logrus.DebugLevel
 		logger.logger.SetFormatter(&CustomerFormatter{})
 		logger.logger.AddHook(NewContextHook(nil))
 	})
 	return logger
+}
+
+func Debug(ctx context.Context, fmtStr string, args ...interface{}) {
+	Logger().logger.WithContext(ctx).Debugf(fmtStr, args...)
 }
 
 func Info(ctx context.Context, fmtStr string, args ...interface{}) {

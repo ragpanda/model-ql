@@ -53,26 +53,33 @@ JoinTarget ← name:(Identifier)  __ alias:("as" __ Identifier)? {
 
 
 WhereClause ←  "where" __ WhereList 
-WhereList ← Where __ (BoolOP __ Where __)* 
+WhereList ← first:Where __ tails:WhereTail* {
+	return parseWhereList(first, tails)
+}
+WhereTail  ← b:BoolOP __ w:Where __ {
+	return []interface{}{BoolOp(parseString(b)), w}, nil
+}
+
 Where ← WhereCondition / WhereHasBracket
 WhereHasBracket ←  "(" __ WhereList  __ ")" 
-WhereCondition ← field:MiltiLevelField __ op:CompareOp __  c:Condition 
-
-
-Condition ← Number / Bool/ String/ Null / ("$" Identifier){
-	return string(c.text), nil
+WhereCondition ← field:MiltiLevelField __ op:CompareOp __  condition:Condition {
+	return parseWhereCondition(field, op, condition)
 }
 
 
-BoolOP ←  "and"/ "or"/ "not" {
-	return string(c.text), nil
-}
-CompareOp  ←  "!="/ "="/ "not in"/ "in" {
-	return string(c.text), nil
-}
+Condition ← Number / Bool/ String/ Null / Ref
+
 MiltiLevelField  ←  ident:(Identifier  ("." Identifier)*){
 	return parseMiltiLevelField(ident)
 }
+
+BoolOP ←  "and"/ "or"/ "not" {
+	return BoolOp(string(c.text)), nil
+}
+CompareOp  ←  "!="/ "="/ "not in"/ "in" {
+	return CompareOp(string(c.text)), nil
+}
+
 
 
 
@@ -81,7 +88,8 @@ MiltiLevelField  ←  ident:(Identifier  ("." Identifier)*){
 Number ← '-'? Integer ( '.' DecimalDigit+ )? Exponent? {
     // JSON numbers have the same syntax as Go's, and are parseable using
     // strconv.
-    return strconv.ParseFloat(string(c.text), 64)
+    r, err := strconv.ParseFloat(string(c.text), 64)
+	return Number(r), err
 }
 
 Integer ← '0' / NonZeroDecimalDigit DecimalDigit*
@@ -90,7 +98,8 @@ Exponent ← 'e'i [+-]? DecimalDigit+
 
 String ← '"' ( !EscapedChar . / '\\' EscapeSequence )* '"' {
     c.text = bytes.Replace(c.text, []byte(`\/`), []byte(`/`), -1)
-    return strconv.Unquote(string(c.text))
+    r, err := strconv.Unquote(string(c.text))
+	return StringObj(r), err
 }
 
 EscapedChar ← [\x00-\x1f"\\]
@@ -107,9 +116,13 @@ NonZeroDecimalDigit ← [1-9]
 
 HexDigit ← [0-9a-f]i
 
-Bool ← "true" { return true, nil } / "false" { return false, nil }
+Bool ← "true" { return Boolean(true), nil } / "false" { return Boolean(false), nil }
 
-Null ← "null" { return nil, nil }
+Null ← "null" { return None(0), nil } 
+
+Ref ←  "$" name:Identifier {
+	return Ref(parseString(name)), nil
+}
 
 
 

@@ -1,8 +1,25 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 )
+
+func Iter(v interface{}, iterFunc func(v interface{})) {
+	if v == nil {
+		return
+	}
+
+	switch item := v.(type) {
+	case []interface{}:
+		for _, i := range item {
+			Iter(i, iterFunc)
+		}
+
+	default:
+		iterFunc(v)
+	}
+}
 
 func toIfaceSlice(v interface{}) []interface{} {
 	if v == nil {
@@ -37,25 +54,22 @@ func parseString(v interface{}) string {
 		return string(b)
 	case []byte:
 		return string(ifs)
-	// case Identifier:
-	// 	return string(ifs)
 	default:
 		return fmt.Sprintf("%s", ifs)
 	}
 }
 
-func Iter(v interface{}, iterFunc func(v interface{})) {
-	if v == nil {
-		return
-	}
+func ResolveModel(ctx context.Context, ident string) func() *Type {
+	return nil
+}
 
-	switch item := v.(type) {
-	case []interface{}:
-		for _, i := range item {
-			Iter(i, iterFunc)
-		}
+func ResolveView(ctx context.Context, ident string) func() *View {
+	return nil
+}
 
-	default:
-		iterFunc(v)
-	}
+var nowCount = 0
+
+func GetCurrentCount() int {
+	nowCount += 1
+	return nowCount
 }
